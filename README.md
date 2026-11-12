@@ -1,8 +1,12 @@
-# DOSSIER 047 — V4 multi-thèmes synchronisée
+# DOSSIER 047 — Version complète multi-thèmes synchronisée
 
 Cette version ajoute les trois parcours thématiques et le suivi du thème choisi.
 
 ## Fonctionnalités
+- Suppression individuelle des équipes depuis l’administration, avec confirmation et suppression de leur progression.
+- Messages personnalisés de prochaine destination enregistrés durablement dans Supabase.
+- Chronomètre figé à la fin de l’équipe ; fin automatique après validation de tous les indices actifs du thème.
+- QR Codes corrigés et affichés via api.qrserver.com.
 - Inscription des équipes avec choix obligatoire : USA, Cinéma ou Royauté.
 - Six QR Codes par thème (18 au total).
 - USA conserve les QR déjà imprimés `?code=QR01` à `?code=QR06`.
@@ -66,3 +70,6 @@ Les médias doivent être téléversés dans le bucket Supabase Storage `dossier
 
 ## Sécurité
 La clé `service_role` est utilisée uniquement comme secret géré par Supabase pour l'Edge Function. Elle ne doit jamais être placée dans `config.js`, dans GitHub Pages, ni partagée dans une conversation.
+
+## Mise à jour complémentaire
+Pour installer les dernières fonctions, suivre le fichier `INSTALLATION_NOUVELLE_VERSION.txt`. Si les migrations 001 et 002 sont déjà appliquées, exécuter uniquement la migration 003.

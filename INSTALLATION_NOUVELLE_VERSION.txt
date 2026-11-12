@@ -1,0 +1,55 @@
+DOSSIER 047 — VERSION COMPLETE
+
+Cette archive part de la version GitHub DOSSIER-047-main.zip fournie et conserve les fichiers et fonctionnalités déjà présents.
+
+NOUVEAUTÉS INTÉGRÉES
+- Suppression individuelle d'une équipe depuis l'onglet Équipes, avec confirmation.
+- Suppression des lignes de progression de l'équipe avant sa suppression.
+- Messages personnalisés de prochaine destination enregistrés dans Supabase.
+- Le message est affiché après une bonne réponse et reste disponible après actualisation.
+- Le chronomètre est figé à la date de fin d'équipe.
+- Une équipe est automatiquement marquée terminée lorsqu'elle a validé tous les indices actifs de son thème.
+- Une équipe terminée ne peut plus scanner ni envoyer de réponses.
+- La correction d'affichage des QR Codes (api.qrserver.com) est conservée.
+
+INSTALLATION — À FAIRE DANS CET ORDRE
+
+1) FAIRE UNE SAUVEGARDE
+Garder une copie du dépôt GitHub actuel avant de remplacer des fichiers.
+
+2) MIGRATION SQL 003
+Dans Supabase > SQL Editor > New query :
+- Ouvrir supabase/migrations/003_message_prochaine_destination.sql
+- Copier tout le contenu dans l'éditeur SQL
+- Cliquer sur Run
+
+Important : les migrations 001 et 002 sont déjà présentes dans le dossier. Si elles ont déjà été exécutées dans ton projet Supabase, ne les exécute pas à nouveau. Pour cette mise à jour, exécuter uniquement la migration 003.
+
+3) REDÉPLOYER LA FONCTION SUPABASE
+Ouvrir un terminal à la racine du dossier DOSSIER_047_COMPLET (là où se trouve le dossier supabase), puis exécuter une commande à la fois :
+
+supabase link --project-ref aheqhjfvehqgjkqbswmx
+
+Puis :
+
+supabase functions deploy game-api
+
+Le secret SUPABASE_SERVICE_ROLE_KEY doit rester configuré dans les secrets de l'Edge Function Supabase. Ne jamais le copier dans config.js ni dans GitHub.
+
+4) PUBLIER LES FICHIERS SUR GITHUB
+Remplacer à la racine du dépôt les fichiers index.html, app.js, styles.css, config.js et README.md par ceux de cette archive.
+Ajouter / mettre à jour le dossier supabase complet, y compris la migration 003.
+Conserver la configuration publique config.js fournie. Ne jamais publier de clé service_role ou sb_secret.
+
+5) TESTS APRÈS PUBLICATION
+- Ouvrir le site avec Ctrl + F5.
+- Se connecter à l'administration puis ouvrir l'onglet Équipes.
+- Vérifier qu'une équipe de test peut être terminée.
+- Vérifier qu'une équipe peut être supprimée après confirmation.
+- Dans Énigmes & médias, modifier une énigme et saisir un message de prochaine destination.
+- Valider la bonne réponse côté joueur : le message doit apparaître.
+- Actualiser la page et vérifier que le message est toujours présent dans l'éditeur.
+- Valider toutes les énigmes d'une équipe de test : son chronomètre doit s'arrêter.
+
+ATTENTION
+Ne supprime pas d'équipe réelle pendant les tests : la suppression est définitive et supprime également sa progression.

@@ -74,19 +74,22 @@ Deno.serve(async (req) => {
     if (action === "team-state") {
       const team = await requireTeam();
       const [{ data: clues }, { data: progress }] = await Promise.all([
-        db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,theme").eq("is_active", true).eq("theme", team.theme).order("order_index"),
+        db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,theme,next_location_message").eq("is_active", true).eq("theme", team.theme).order("order_index"),
         db.from("team_progress").select("clue_code,scanned_at,solved_at").eq("team_id", team.id)
       ]);
       const duration = team.game_sessions?.duration_seconds || 1800;
-      const elapsed = team.started_at ? Math.floor((Date.now() - new Date(team.started_at).getTime()) / 1000) : 0;
+      // Freeze elapsed time at finished_at; otherwise continue from the live clock.
+      const stopAt = team.finished_at ? new Date(team.finished_at).getTime() : Date.now();
+      const elapsed = team.started_at ? Math.floor((stopAt - new Date(team.started_at).getTime()) / 1000) : 0;
       const remaining = Math.max(0, duration - elapsed);
       return reply({ team: { id: team.id, team_name: team.team_name, team_color: team.team_color, theme: team.theme, started_at: team.started_at, finished_at: team.finished_at }, clues: clues || [], progress: progress || [], total_clues: (clues || []).length, remaining_seconds: remaining });
     }
 
     if (action === "scan-clue") {
       const team = await requireTeam();
+      if (team.finished_at) throw new Error("Cette équipe a terminé sa mission. Le scan n'est plus disponible.");
       const code = String(body.code || "").toUpperCase();
-      const { data: clue, error } = await db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,theme").eq("code", code).eq("theme", team.theme).eq("is_active", true).maybeSingle();
+      const { data: clue, error } = await db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,theme,next_location_message").eq("code", code).eq("theme", team.theme).eq("is_active", true).maybeSingle();
       if (error || !clue) throw new Error("QR Code inconnu, désactivé ou réservé à un autre thème.");
       const { data: progress } = await db.from("team_progress").upsert({ team_id: team.id, clue_code: code, scanned_at: new Date().toISOString() }, { onConflict: "team_id,clue_code", ignoreDuplicates: false }).select("clue_code,scanned_at,solved_at").single();
       return reply({ clue, progress });
@@ -94,18 +97,32 @@ Deno.serve(async (req) => {
 
     if (action === "submit-answer") {
       const team = await requireTeam();
+      if (team.finished_at) throw new Error("Cette équipe a terminé sa mission. Les réponses ne sont plus acceptées.");
       const code = String(body.code || "").toUpperCase();
       const answer = String(body.answer || "");
-      const { data: clue } = await db.from("clues").select("answer_hash,is_active,theme").eq("code", code).maybeSingle();
+      const { data: clue } = await db.from("clues").select("answer_hash,is_active,theme,next_location_message").eq("code", code).maybeSingle();
       if (!clue || clue.theme !== team.theme || !clue.is_active || !clue.answer_hash) throw new Error("La réponse de cet indice n'est pas encore configurée.");
       const correct = (await sha(answer)) === clue.answer_hash;
       const { data: old } = await db.from("team_progress").select("attempts,scanned_at").eq("team_id", team.id).eq("clue_code", code).maybeSingle();
-      await db.from("team_progress").upsert({
+      const { error: progressError } = await db.from("team_progress").upsert({
         team_id: team.id, clue_code: code, scanned_at: old?.scanned_at || new Date().toISOString(),
         attempts: (old?.attempts || 0) + 1,
         ...(correct ? { solved_at: new Date().toISOString() } : {})
       }, { onConflict: "team_id,clue_code" });
-      return reply({ correct });
+      if (progressError) throw new Error(progressError.message);
+      let finishedAt = team.finished_at || null;
+      if (correct) {
+        const [{ count: totalActive }, { count: totalSolved }] = await Promise.all([
+          db.from("clues").select("code", { count: "exact", head: true }).eq("theme", team.theme).eq("is_active", true),
+          db.from("team_progress").select("clue_code", { count: "exact", head: true }).eq("team_id", team.id).not("solved_at", "is", null)
+        ]);
+        if ((totalActive || 0) > 0 && (totalSolved || 0) >= (totalActive || 0) && !finishedAt) {
+          finishedAt = new Date().toISOString();
+          const { error: finishError } = await db.from("teams").update({ finished_at: finishedAt }).eq("id", team.id).is("finished_at", null);
+          if (finishError) throw new Error(finishError.message);
+        }
+      }
+      return reply({ correct, next_location_message: correct ? (clue.next_location_message || "") : "", finished_at: finishedAt });
     }
 
     if (action === "request-hint") {
@@ -122,7 +139,7 @@ Deno.serve(async (req) => {
       if (!session) throw new Error("Session 047-2026 introuvable.");
       const [{ data: teams }, { data: clues }] = await Promise.all([
         db.from("teams").select("id,team_name,team_color,theme,started_at,finished_at").eq("session_id", session.id).order("created_at"),
-        db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,hint,theme").order("order_index")
+        db.from("clues").select("code,title,description,media_type,media_url,map_url,order_index,is_active,hint,theme,next_location_message").order("order_index")
       ]);
       const ids = (teams || []).map(t => t.id);
       const { data: progress } = ids.length ? await db.from("team_progress").select("team_id,clue_code,scanned_at,solved_at").in("team_id", ids) : { data: [] };
@@ -131,7 +148,8 @@ Deno.serve(async (req) => {
         const p = (progress || []).filter(x => x.team_id === t.id);
         const teamTotal = (clues || []).filter(c => c.is_active && c.theme === t.theme).length;
         const solvedRows = p.filter(x => x.solved_at);
-        const elapsed = t.started_at ? Math.floor((Date.now() - new Date(t.started_at).getTime()) / 1000) : 0;
+        const stopAt = t.finished_at ? new Date(t.finished_at).getTime() : Date.now();
+        const elapsed = t.started_at ? Math.floor((stopAt - new Date(t.started_at).getTime()) / 1000) : 0;
         const remaining = Math.max(0, (session.duration_seconds || 1800) - elapsed);
         return { ...t, solved: solvedRows.length, scanned: p.length, solved_codes: solvedRows.map(x => x.clue_code).join(" · "), percent: Math.round(solvedRows.length / Math.max(1,teamTotal) * 100), total_clues: teamTotal, remaining_seconds: remaining, status: t.finished_at ? "Terminée" : remaining <= 0 ? "Temps écoulé" : "En cours" };
       });
@@ -157,6 +175,7 @@ Deno.serve(async (req) => {
         code, theme, title, description: String(body.description || "").slice(0, 4000),
         media_type: mediaType, media_url: String(body.media_url || "").slice(0, 2000),
         map_url: "", hint: String(body.hint || "").slice(0, 2000),
+        next_location_message: String(body.next_location_message || "").slice(0, 2000),
         is_active: body.is_active !== false, order_index: (lastRows?.[0]?.order_index || 0) + 1
       };
       if (answer) row.answer_hash = await sha(answer);
@@ -172,6 +191,7 @@ Deno.serve(async (req) => {
         title: String(body.title || "").slice(0,100), description: String(body.description || "").slice(0,4000),
         media_type: String(body.media_type || "text"), media_url: String(body.media_url || "").slice(0,2000),
         map_url: String(body.map_url || "").slice(0,2000), hint: String(body.hint || "").slice(0,2000),
+        next_location_message: String(body.next_location_message || "").slice(0,2000),
         is_active: !!body.is_active
       };
       if (!["text","image","audio","video","map"].includes(String(update.media_type))) throw new Error("Type de média invalide.");
@@ -185,9 +205,22 @@ Deno.serve(async (req) => {
       await requireAdmin();
       const teamId = String(body.team_id || "");
       if (!/^[0-9a-f-]{36}$/i.test(teamId)) throw new Error("Identifiant d'équipe invalide.");
-      const { error } = await db.from("teams").update({ finished_at: new Date().toISOString() }).eq("id", teamId);
+      const { error } = await db.from("teams").update({ finished_at: new Date().toISOString() }).eq("id", teamId).is("finished_at", null);
       if (error) throw new Error(error.message);
       return reply({ ok: true });
+    }
+
+    if (action === "admin-delete-team") {
+      await requireAdmin();
+      const teamId = String(body.team_id || "");
+      if (!/^[0-9a-f-]{36}$/i.test(teamId)) throw new Error("Identifiant d'équipe invalide.");
+      // Delete child rows explicitly before the team, regardless of FK cascade settings.
+      const { error: progressError } = await db.from("team_progress").delete().eq("team_id", teamId);
+      if (progressError) throw new Error(progressError.message);
+      const { data: deleted, error: teamError } = await db.from("teams").delete().eq("id", teamId).select("id").maybeSingle();
+      if (teamError) throw new Error(teamError.message);
+      if (!deleted) throw new Error("Cette équipe n'existe plus ou a déjà été supprimée.");
+      return reply({ ok: true, deleted_team_id: deleted.id });
     }
 
     if (action === "admin-session") {

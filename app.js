@@ -59,15 +59,18 @@ async function openScannedClue(code){
 function mediaMarkup(c){
  if(!c.media_url)return `<p class="notice">Aucun média n'a encore été ajouté à cet indice.</p>`;
  const u=esc(c.media_url);
- if(c.media_type==='image')return `<img class="media" src="${u}" alt="Preuve photographique">`;
- if(c.media_type==='audio')return `<audio class="audio-player" controls src="${u}">Votre navigateur ne lit pas cet audio.</audio>`;
- if(c.media_type==='video')return `<video class="media" controls playsinline src="${u}">Votre navigateur ne lit pas cette vidéo.</video>`;
- if(c.media_type==='map')return `<p><a href="${u}" target="_blank" rel="noopener">Ouvrir la localisation / carte ↗</a></p>`;
+ if(c.media_type==='image')return `<img class="media" src="${u}" alt="Pièce à conviction photographique">`;
+ if(c.media_type==='audio')return `<audio class="audio-player" controls preload="metadata" src="${u}">Votre navigateur ne lit pas cet audio.</audio>`;
+ if(c.media_type==='video')return `<video class="media" controls playsinline preload="metadata" src="${u}">Votre navigateur ne lit pas cette vidéo.</video>`;
+ if(c.media_type==='map')return `<p><a class="btn" href="${u}" target="_blank" rel="noopener">Ouvrir la carte ↗</a></p>`;
+ if(c.media_type==='document')return `<div class="document-preview"><iframe src="${u}" title="Document de preuve"></iframe><p><a class="btn" href="${u}" target="_blank" rel="noopener">Ouvrir / télécharger le document ↗</a></p></div>`;
  return '';
 }
 function renderClue(r){
  const c=r.clue;
- app.innerHTML=`<div class="section-head"><div><div class="eyebrow">PIÈCE À CONVICTION · ${esc(c.code)}</div><h1 style="font-size:clamp(42px,7vw,72px)">${esc(c.title)}</h1></div><span class="pill">${r.progress?.solved_at?'VALIDÉ':'NOUVEL INDICE'}</span></div><div class="panel"><p>${esc(c.description||'')}</p>${mediaMarkup(c)}${c.map_url?`<p><a href="${esc(c.map_url)}" target="_blank" rel="noopener">Ouvrir la carte ↗</a></p>`:''}<div class="field"><label>Votre réponse</label><input id="answer" autocomplete="off" placeholder="Saisir votre réponse"></div><button class="btn primary" id="submit-answer">Valider la réponse</button><button class="btn ghost" id="hint">Demander un indice</button><div id="feedback"></div></div><div class="actions"><button class="btn ghost" id="back-team">Retour à ma progression</button></div>`;
+ const hasMedia=!!c.media_url;
+ app.innerHTML=`<div class="section-head"><div><div class="eyebrow">PIÈCE À CONVICTION · ${esc(c.code)}</div><h1 style="font-size:clamp(42px,7vw,72px)">${esc(c.title)}</h1></div><span class="pill">${r.progress?.solved_at?'VALIDÉ':'NOUVEL INDICE'}</span></div><div class="panel">${hasMedia?`<section id="evidence-media" class="evidence-media"><div class="eyebrow">MÉDIA / PIÈCE À CONVICTION</div>${mediaMarkup(c)}</section>`:''}<div class="clue-instructions"><div class="eyebrow">CONSIGNE</div><p>${esc(c.description||'')}</p>${c.map_url?`<p><a href="${esc(c.map_url)}" target="_blank" rel="noopener">Ouvrir la carte complémentaire ↗</a></p>`:''}</div>${hasMedia?`<button class="btn ghost" id="reopen-media" type="button">↶ Revoir le média</button>`:''}<div class="field"><label>Votre réponse</label><input id="answer" autocomplete="off" placeholder="Saisir votre réponse"></div><button class="btn primary" id="submit-answer">Valider la réponse</button><button class="btn ghost" id="hint">Demander un indice</button><div id="feedback"></div></div><div class="actions"><button class="btn ghost" id="back-team">Retour à ma progression</button></div>`;
+ if(hasMedia)$('#reopen-media').onclick=()=>$('#evidence-media')?.scrollIntoView({behavior:'smooth',block:'center'});
  $('#submit-answer').onclick=async()=>{try{const a=$('#answer').value.trim();if(!a)throw new Error('Saisissez une réponse.');const x=await api('submit-answer',{code:c.code,answer:a});if(x.correct){const destination=x.next_location_message||'Indice validé. Retrouvez votre progression pour continuer l’enquête.';$('#feedback').innerHTML=`<div class="notice"><strong>✓ Bonne réponse ! Preuve validée.</strong><p style="margin:10px 0 0"><strong>PROCHAINE DESTINATION</strong><br>${esc(destination)}</p><p class="small muted">Retour automatique à votre progression dans 6 secondes…</p><button class="btn primary" id="continue-team">Continuer</button></div>`;$('#submit-answer').disabled=true;const back=async()=>{try{history.replaceState({},'',location.pathname);const state=await api('team-state');currentTeam=state.team;await renderTeam(state)}catch(e){err(e)}};$('#continue-team').onclick=back;setTimeout(()=>{if($('#continue-team'))back()},6000)}else{$('#feedback').innerHTML='<p class="notice">Ce n’est pas la bonne réponse. Continuez vos recherches.</p>'}}catch(e){$('#feedback').innerHTML=`<p class="notice">${esc(e.message)}</p>`}};
  $('#hint').onclick=async()=>{try{const x=await api('request-hint',{code:c.code});$('#feedback').innerHTML=`<p class="notice">Indice : ${esc(x.hint||'Aucun indice supplémentaire configuré.')}</p>`}catch(e){$('#feedback').textContent=e.message}};
  $('#back-team').onclick=route;
@@ -118,6 +121,25 @@ function nextClueCode(clues,theme){
  let n=1;while(used.has(`${prefix}${String(n).padStart(2,'0')}`))n++;
  return `${prefix}${String(n).padStart(2,'0')}`;
 }
+async function uploadClueMedia(file, code){
+ if(!file)return null;
+ if(file.size>50*1024*1024)throw new Error('Le fichier dépasse la limite de 50 Mo.');
+ const safeName=file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g,'_').slice(-100)||'media';
+ const path=`${String(code).toUpperCase()}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+ const {error}=await client.storage.from('dossier047-media').upload(path,file,{contentType:file.type||'application/octet-stream',cacheControl:'3600',upsert:false});
+ if(error)throw new Error(`Envoi du média impossible : ${error.message}`);
+ const {data}=client.storage.from('dossier047-media').getPublicUrl(path);
+ if(!data?.publicUrl)throw new Error('Le fichier a été envoyé mais son URL publique est introuvable.');
+ return data.publicUrl;
+}
+function inferMediaType(file){
+ if(!file)return null;
+ if(file.type.startsWith('image/'))return 'image';
+ if(file.type.startsWith('audio/'))return 'audio';
+ if(file.type.startsWith('video/'))return 'video';
+ if(file.type==='application/pdf')return 'document';
+ return null;
+}
 function addClueForm(clues){
  modal(`<div class="eyebrow">NOUVELLE PIÈCE À CONVICTION</div><h2>Ajouter un QR Code</h2>
  <div class="field"><label>Thème</label><select id="new-theme"><option value="usa">🇺🇸 USA</option><option value="cinema">🎬 Cinéma</option><option value="royaute">👑 Royauté</option></select></div>
@@ -125,8 +147,8 @@ function addClueForm(clues){
  <div class="field"><label>Code permanent</label><input id="new-code" readonly></div>
  <div class="field"><label>Titre</label><input id="new-title" maxlength="100" placeholder="Titre de la nouvelle énigme"></div>
  <div class="field"><label>Texte / consigne</label><textarea id="new-desc" placeholder="Contenu présenté aux joueurs"></textarea></div>
- <div class="field"><label>Type de média</label><select id="new-type">${['text','image','audio','video','map'].map(x=>`<option value="${x}">${x}</option>`).join('')}</select></div>
- <div class="field"><label>URL publique du média (facultatif)</label><input id="new-url" placeholder="https://..."></div>
+ <div class="field"><label>Type de média</label><select id="new-type">${[['text','Texte seul'],['image','Photo'],['audio','Audio'],['video','Vidéo'],['map','Carte / lien'],['document','Document PDF']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></div>
+ <div class="field"><label>URL du média (facultatif)</label><input id="new-url" placeholder="https://..."></div><div class="field"><label>Importer un fichier depuis l’ordinateur</label><input id="new-file" type="file" accept="image/*,audio/*,video/*,application/pdf"><p class="muted small">Photo, audio, vidéo ou PDF · 50 Mo maximum. Le fichier sera stocké dans Supabase.</p></div>
  <div class="field"><label>Réponse attendue</label><input id="new-answer" placeholder="Réponse exacte"></div>
  <div class="field"><label>Indice supplémentaire (sur demande)</label><textarea id="new-hint"></textarea></div>
  <div class="field"><label>Message à afficher après validation · prochaine destination</label><textarea id="new-next-message" placeholder="Ex. : Rendez-vous près de la grande porte rouge…"></textarea></div>
@@ -134,11 +156,11 @@ function addClueForm(clues){
  <div class="actions"><button class="btn primary" id="create-clue">Créer le QR Code</button></div>`);
  const updateCode=()=>$('#new-code').value=nextClueCode(clues,$('#new-theme').value);
  $('#new-theme').onchange=updateCode;updateCode();
- $('#create-clue').onclick=async()=>{try{const title=$('#new-title').value.trim();if(!title)throw new Error('Saisissez un titre pour cette énigme.');await api('admin-create-clue',{theme:$('#new-theme').value,code:$('#new-code').value,title,description:$('#new-desc').value,media_type:$('#new-type').value,media_url:$('#new-url').value,answer:$('#new-answer').value,hint:$('#new-hint').value,next_location_message:$('#new-next-message').value,is_active:$('#new-active').checked});$('#modal').close();await loadAdminTab()}catch(e){err(e)}};
+ $('#create-clue').onclick=async()=>{const b=$('#create-clue');try{b.disabled=true;b.textContent='Enregistrement…';const title=$('#new-title').value.trim();if(!title)throw new Error('Saisissez un titre pour cette énigme.');const file=$('#new-file').files[0];const detected=inferMediaType(file);if(file&&!detected)throw new Error('Format non pris en charge. Utilisez une photo, un audio, une vidéo ou un PDF.');const mediaUrl=await uploadClueMedia(file,$('#new-code').value);await api('admin-create-clue',{theme:$('#new-theme').value,code:$('#new-code').value,title,description:$('#new-desc').value,media_type:detected||$('#new-type').value,media_url:mediaUrl||$('#new-url').value,answer:$('#new-answer').value,hint:$('#new-hint').value,next_location_message:$('#new-next-message').value,is_active:$('#new-active').checked});$('#modal').close();await loadAdminTab()}catch(e){b.disabled=false;b.textContent='Créer le QR Code';err(e)}};
 }
 function editClue(c){
- modal(`<div class="eyebrow">ÉDITION · ${esc(c.code)}</div><h2>${esc(c.title)}</h2><p class="notice">Thème : ${esc(themeLabel(c.theme))} · Code permanent : ${esc(c.code)}</p><div class="field"><label>Titre</label><input id="cl-title" value="${esc(c.title)}"></div><div class="field"><label>Texte / consigne</label><textarea id="cl-desc">${esc(c.description||'')}</textarea></div><div class="field"><label>Type de média</label><select id="cl-type">${['text','image','audio','video','map'].map(x=>`<option ${c.media_type===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>URL publique du média</label><input id="cl-url" value="${esc(c.media_url||'')}" placeholder="https://..."></div><div class="field"><label>URL de carte (facultatif)</label><input id="cl-map" value="${esc(c.map_url||'')}"></div><div class="field"><label>Réponse attendue (gardée côté serveur)</label><input id="cl-answer" type="password" placeholder="Nouvelle réponse ou laisser vide"></div><div class="field"><label>Indice supplémentaire (sur demande)</label><textarea id="cl-hint">${esc(c.hint||'')}</textarea></div><div class="field"><label>Message à afficher après validation · prochaine destination</label><textarea id="cl-next-message" placeholder="Ex. : Rendez-vous près de la grande porte rouge…">${esc(c.next_location_message||'')}</textarea></div><label><input id="cl-active" type="checkbox" ${c.is_active?'checked':''}> Indice actif</label><div class="actions"><button class="btn primary" id="save-clue">Enregistrer</button></div>`);
- $('#save-clue').onclick=async()=>{try{await api('admin-save-clue',{code:c.code,title:$('#cl-title').value,description:$('#cl-desc').value,media_type:$('#cl-type').value,media_url:$('#cl-url').value,map_url:$('#cl-map').value,answer:$('#cl-answer').value,hint:$('#cl-hint').value,next_location_message:$('#cl-next-message').value,is_active:$('#cl-active').checked});$('#modal').close();await loadAdminTab()}catch(e){err(e)}};
+ modal(`<div class="eyebrow">ÉDITION · ${esc(c.code)}</div><h2>${esc(c.title)}</h2><p class="notice">Thème : ${esc(themeLabel(c.theme))} · Code permanent : ${esc(c.code)}</p><div class="field"><label>Titre</label><input id="cl-title" value="${esc(c.title)}"></div><div class="field"><label>Texte / consigne</label><textarea id="cl-desc">${esc(c.description||'')}</textarea></div><div class="field"><label>Type de média</label><select id="cl-type">${[['text','Texte seul'],['image','Photo'],['audio','Audio'],['video','Vidéo'],['map','Carte / lien'],['document','Document PDF']].map(([v,l])=>`<option value="${v}" ${c.media_type===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label>URL du média</label><input id="cl-url" value="${esc(c.media_url||'')}" placeholder="https://..."></div><div class="field"><label>Remplacer / importer un fichier</label><input id="cl-file" type="file" accept="image/*,audio/*,video/*,application/pdf"><p class="muted small">Photo, audio, vidéo ou PDF · 50 Mo maximum. L’ancien fichier reste conservé dans le stockage.</p></div><div class="field"><label>URL de carte (facultatif)</label><input id="cl-map" value="${esc(c.map_url||'')}"></div><div class="field"><label>Réponse attendue (gardée côté serveur)</label><input id="cl-answer" type="password" placeholder="Nouvelle réponse ou laisser vide"></div><div class="field"><label>Indice supplémentaire (sur demande)</label><textarea id="cl-hint">${esc(c.hint||'')}</textarea></div><div class="field"><label>Message à afficher après validation · prochaine destination</label><textarea id="cl-next-message" placeholder="Ex. : Rendez-vous près de la grande porte rouge…">${esc(c.next_location_message||'')}</textarea></div><label><input id="cl-active" type="checkbox" ${c.is_active?'checked':''}> Indice actif</label><div class="actions"><button class="btn primary" id="save-clue">Enregistrer</button></div>`);
+ $('#save-clue').onclick=async()=>{const b=$('#save-clue');try{b.disabled=true;b.textContent='Enregistrement…';const file=$('#cl-file').files[0];const detected=inferMediaType(file);if(file&&!detected)throw new Error('Format non pris en charge. Utilisez une photo, un audio, une vidéo ou un PDF.');const mediaUrl=file?await uploadClueMedia(file,c.code):$('#cl-url').value;await api('admin-save-clue',{code:c.code,title:$('#cl-title').value,description:$('#cl-desc').value,media_type:detected||$('#cl-type').value,media_url:mediaUrl,map_url:$('#cl-map').value,answer:$('#cl-answer').value,hint:$('#cl-hint').value,next_location_message:$('#cl-next-message').value,is_active:$('#cl-active').checked});$('#modal').close();await loadAdminTab()}catch(e){b.disabled=false;b.textContent='Enregistrer';err(e)}};
 }
 window.addEventListener('hashchange',route);
 route().catch(err);

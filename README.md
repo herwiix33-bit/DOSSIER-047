@@ -73,3 +73,8 @@ La clé `service_role` est utilisée uniquement comme secret géré par Supabase
 
 ## Mise à jour complémentaire
 Pour installer les dernières fonctions, suivre le fichier `INSTALLATION_NOUVELLE_VERSION.txt`. Si les migrations 001 et 002 sont déjà appliquées, exécuter uniquement la migration 003.
+
+
+## Médias sur les QR codes
+
+La version inclut l’importation de photos, audios, vidéos et PDF dans Supabase Storage (bucket `dossier047-media`), avec affichage automatique après scan et bouton « Revoir le média ». Les cartes peuvent être ajoutées par URL. Pour installer cette fonctionnalité, exécuter uniquement la migration `004_stockage_medias_qr.sql`, publier les fichiers mis à jour et redéployer `game-api`. Voir `INSTALLATION_NOUVELLE_VERSION.txt`.

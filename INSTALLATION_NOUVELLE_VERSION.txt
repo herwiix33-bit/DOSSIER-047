@@ -1,55 +1,48 @@
-DOSSIER 047 — VERSION COMPLETE
+DOSSIER 047 — AJOUT DES MÉDIAS SUR CHAQUE QR CODE
 
-Cette archive part de la version GitHub DOSSIER-047-main.zip fournie et conserve les fichiers et fonctionnalités déjà présents.
+Cette mise à jour ajoute l'importation et l'enregistrement permanent des médias associés aux indices. Elle conserve les codes QR existants : aucun QR code n'a besoin d'être réimprimé.
 
-NOUVEAUTÉS INTÉGRÉES
-- Suppression individuelle d'une équipe depuis l'onglet Équipes, avec confirmation.
-- Suppression des lignes de progression de l'équipe avant sa suppression.
-- Messages personnalisés de prochaine destination enregistrés dans Supabase.
-- Le message est affiché après une bonne réponse et reste disponible après actualisation.
-- Le chronomètre est figé à la date de fin d'équipe.
-- Une équipe est automatiquement marquée terminée lorsqu'elle a validé tous les indices actifs de son thème.
-- Une équipe terminée ne peut plus scanner ni envoyer de réponses.
-- La correction d'affichage des QR Codes (api.qrserver.com) est conservée.
+FONCTIONNALITÉS
+- Chaque indice peut rester en texte seul ou présenter une photo, un audio, une vidéo, une carte via URL ou un document PDF.
+- L'administration permet d'importer une photo, un audio, une vidéo ou un PDF (50 Mo maximum).
+- Les fichiers sont stockés dans le bucket public Supabase Storage « dossier047-media ».
+- Le lien du fichier et le type de média sont enregistrés dans la fiche de l'indice via game-api.
+- Après scan, le média apparaît avant la consigne. Un bouton « Revoir le média » permet d'y revenir.
+- Remplacer un fichier ne supprime pas automatiquement l'ancien : cela évite de casser un affichage en cours et permet un retour arrière. Les anciens fichiers pourront être nettoyés plus tard depuis Supabase Storage.
 
-INSTALLATION — À FAIRE DANS CET ORDRE
+INSTALLATION — DANS CET ORDRE
 
-1) FAIRE UNE SAUVEGARDE
-Garder une copie du dépôt GitHub actuel avant de remplacer des fichiers.
+1) SAUVEGARDE
+Télécharger une nouvelle sauvegarde du dépôt GitHub avant de remplacer les fichiers.
 
-2) MIGRATION SQL 003
-Dans Supabase > SQL Editor > New query :
-- Ouvrir supabase/migrations/003_message_prochaine_destination.sql
-- Copier tout le contenu dans l'éditeur SQL
-- Cliquer sur Run
+2) MIGRATION SQL 004
+Dans Supabase > SQL Editor > New query, ouvrir et copier tout le fichier :
+supabase/migrations/004_stockage_medias_qr.sql
+Coller dans l'éditeur et cliquer sur Run. Cette migration crée/met à jour le bucket et ses règles d'accès. Ne pas rejouer les migrations 001, 002 ou 003.
 
-Important : les migrations 001 et 002 sont déjà présentes dans le dossier. Si elles ont déjà été exécutées dans ton projet Supabase, ne les exécute pas à nouveau. Pour cette mise à jour, exécuter uniquement la migration 003.
+3) METTRE À JOUR GITHUB
+À la racine du dépôt, remplacer : app.js, styles.css, index.html, README.md et INSTALLATION_NOUVELLE_VERSION.txt.
+Ajouter le nouveau fichier supabase/migrations/004_stockage_medias_qr.sql.
+Remplacer aussi supabase/functions/game-api/index.ts par celui de cette archive.
+Publier les changements sur la branche main avec Commit changes.
 
-3) REDÉPLOYER LA FONCTION SUPABASE
-Ouvrir un terminal à la racine du dossier DOSSIER_047_COMPLET (là où se trouve le dossier supabase), puis exécuter une commande à la fois :
-
-supabase link --project-ref aheqhjfvehqgjkqbswmx
-
-Puis :
-
+4) REDÉPLOYER game-api
+Dans CMD, à la racine du projet contenant le dossier supabase, exécuter :
 supabase functions deploy game-api
+Le projet est déjà lié si la commande supabase link avait été faite auparavant. Ne jamais placer la clé service_role dans le navigateur ou GitHub.
 
-Le secret SUPABASE_SERVICE_ROLE_KEY doit rester configuré dans les secrets de l'Edge Function Supabase. Ne jamais le copier dans config.js ni dans GitHub.
+5) TESTER
+- Ouvrir le site et faire Ctrl+F5.
+- Se connecter à l'administration > Énigmes & médias > Modifier un indice de test.
+- Choisir une photo, audio, vidéo ou PDF puis cliquer Enregistrer.
+- Vérifier que l'indice affiche le type et le lien du média dans l'administration.
+- Scanner le QR code correspondant sur un téléphone : le média doit apparaître avant la consigne.
+- Cliquer « Revoir le média », puis actualiser et scanner à nouveau.
+- Vérifier que le média est toujours présent.
 
-4) PUBLIER LES FICHIERS SUR GITHUB
-Remplacer à la racine du dépôt les fichiers index.html, app.js, styles.css, config.js et README.md par ceux de cette archive.
-Ajouter / mettre à jour le dossier supabase complet, y compris la migration 003.
-Conserver la configuration publique config.js fournie. Ne jamais publier de clé service_role ou sb_secret.
-
-5) TESTS APRÈS PUBLICATION
-- Ouvrir le site avec Ctrl + F5.
-- Se connecter à l'administration puis ouvrir l'onglet Équipes.
-- Vérifier qu'une équipe de test peut être terminée.
-- Vérifier qu'une équipe peut être supprimée après confirmation.
-- Dans Énigmes & médias, modifier une énigme et saisir un message de prochaine destination.
-- Valider la bonne réponse côté joueur : le message doit apparaître.
-- Actualiser la page et vérifier que le message est toujours présent dans l'éditeur.
-- Valider toutes les énigmes d'une équipe de test : son chronomètre doit s'arrêter.
-
-ATTENTION
-Ne supprime pas d'équipe réelle pendant les tests : la suppression est définitive et supprime également sa progression.
+LIMITES ET SÉCURITÉ
+- Taille maximale d'un fichier : 50 Mo.
+- Types pris en charge : JPEG, PNG, WEBP, GIF, audio MP3/MP4/WAV/OGG/WEBM, vidéo MP4/WEBM/MOV et PDF.
+- La lecture est publique afin que les joueurs puissent voir les médias sans compte. L'envoi et la gestion des fichiers sont réservés aux administrateurs authentifiés.
+- La clé publishable peut rester dans config.js. Ne jamais publier la clé service_role / sb_secret.
+- Une carte peut être ajoutée comme URL dans le champ URL du média ou URL de carte. Une carte image/PDF peut aussi être importée comme média.

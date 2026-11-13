@@ -166,7 +166,7 @@ Deno.serve(async (req) => {
       const validCode = theme === "usa" ? /^QR[0-9]{2,}$/ : theme === "cinema" ? /^CIN[0-9]{2,}$/ : /^ROY[0-9]{2,}$/;
       if (!validCode.test(code)) throw new Error("Le code ne correspond pas au thème choisi.");
       if (title.length < 2) throw new Error("Le titre doit contenir au moins 2 caractères.");
-      if (!["text", "image", "audio", "video", "map"].includes(mediaType)) throw new Error("Type de média invalide.");
+      if (!["text", "image", "audio", "video", "map", "document"].includes(mediaType)) throw new Error("Type de média invalide.");
       const { data: existing } = await db.from("clues").select("code").eq("code", code).maybeSingle();
       if (existing) throw new Error("Ce code QR existe déjà. Actualisez la page pour obtenir le prochain numéro disponible.");
       const { data: lastRows } = await db.from("clues").select("order_index").order("order_index", { ascending: false }).limit(1);
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
         next_location_message: String(body.next_location_message || "").slice(0,2000),
         is_active: !!body.is_active
       };
-      if (!["text","image","audio","video","map"].includes(String(update.media_type))) throw new Error("Type de média invalide.");
+      if (!["text","image","audio","video","map","document"].includes(String(update.media_type))) throw new Error("Type de média invalide.");
       if (String(body.answer || "").trim()) update.answer_hash = await sha(String(body.answer));
       const { error } = await db.from("clues").update(update).eq("code", code);
       if (error) throw new Error(error.message);
